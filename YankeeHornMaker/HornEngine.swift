@@ -26,6 +26,7 @@ final class HornEngine: ObservableObject {
 
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
+    private let reverb = AVAudioUnitReverb()
     private let sampleRate: Double = 44100
     private var configured = false
 
@@ -57,8 +58,13 @@ final class HornEngine: ObservableObject {
         try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         try? session.setActive(true)
         engine.attach(player)
+        engine.attach(reverb)
+        // 族のトンネルサウンドっぽく大きめの残響を薄めにかける
+        reverb.loadFactoryPreset(.largeHall)
+        reverb.wetDryMix = 28
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
-        engine.connect(player, to: engine.mainMixerNode, format: format)
+        engine.connect(player, to: reverb, format: format)
+        engine.connect(reverb, to: engine.mainMixerNode, format: format)
         engine.prepare()
         try? engine.start()
     }
