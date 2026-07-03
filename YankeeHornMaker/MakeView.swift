@@ -124,7 +124,7 @@ struct MakeView: View {
                     Button {
                         steps = normalized(melody.notes)
                         tempo = melody.tempo
-                        engine.tone = HornTone(rawValue: melody.tone) ?? .air
+                        engine.tone = HornTone(rawValue: melody.tone) ?? .bugle
                         showSaved = false
                     } label: {
                         HStack {
