@@ -3,12 +3,22 @@ import AVFoundation
 
 enum HornTone: String, CaseIterable, Codable, Identifiable {
     case bugle = "リアルホーン"
+    case horn = "重低音ホーン"
     case electronic = "電子ホーン"
     var id: String { rawValue }
+
+    /// 同梱サンプルのファイル名と基準ピッチ。electronicはサンプルを持たない。
+    var sampleInfo: (resource: String, f0: Double)? {
+        switch self {
+        case .bugle: return ("BugleNote", 464.2)
+        case .horn: return ("HornNote", 308.4)
+        case .electronic: return nil
+        }
+    }
 }
 
 /// 族のミュージックホーンを鳴らすエンジン。
-/// リアルホーンは同梱したホーンの録音（BugleNote.wav）をピッチシフトして鳴らす。
+/// リアルホーン系は同梱したホーンの録音をピッチシフトして鳴らす。
 /// 電子ホーンは倍音加算合成で鳴らす。どちらもメロディ全体を1バッファに描画する。
 final class HornEngine: ObservableObject {
     @Published var isPlaying = false
@@ -21,24 +31,26 @@ final class HornEngine: ObservableObject {
     private let sampleRate: Double = 44100
     private var configured = false
 
-    // 同梱サンプル（リアルホーン）
-    private var sample: [Float] = []
-    private let sampleF0: Double = 464.2
+    // 同梱サンプル（音色ごとの波形）
+    private var samples: [HornTone: [Float]] = [:]
 
     init() {
-        loadSample()
+        for tone in HornTone.allCases {
+            if let info = tone.sampleInfo, let data = Self.loadSample(info.resource) {
+                samples[tone] = data
+            }
+        }
     }
 
-    private func loadSample() {
-        guard let url = Bundle.main.url(forResource: "BugleNote", withExtension: "wav"),
-              let file = try? AVAudioFile(forReading: url) else { return }
+    private static func loadSample(_ resource: String) -> [Float]? {
+        guard let url = Bundle.main.url(forResource: resource, withExtension: "wav"),
+              let file = try? AVAudioFile(forReading: url) else { return nil }
         let frames = AVAudioFrameCount(file.length)
         guard frames > 0,
               let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: frames),
               (try? file.read(into: buf)) != nil,
-              let ch = buf.floatChannelData else { return }
-        let n = Int(buf.frameLength)
-        sample = Array(UnsafeBufferPointer(start: ch[0], count: n))
+              let ch = buf.floatChannelData else { return nil }
+        return Array(UnsafeBufferPointer(start: ch[0], count: Int(buf.frameLength)))
     }
 
     private func configure() {
@@ -94,12 +106,13 @@ final class HornEngine: ObservableObject {
 
         let gate = 0.85 // 発音長。残りは無音でパラリラの粒立ちを作る
         let noteFrames = Int(Double(framesPerStep) * gate)
-        let useSample = tone == .bugle && !sample.isEmpty
+        let sample = samples[tone]
         for (idx, note) in notes.enumerated() where note >= 0 {
             let freq = 440.0 * pow(2.0, (Double(note) - 69.0) / 12.0)
             let start = idx * framesPerStep
-            if useSample {
-                renderSample(freq: freq, left: left, right: right,
+            if let sample = sample, let info = tone.sampleInfo, !sample.isEmpty {
+                renderSample(freq: freq, sample: sample, sampleF0: info.f0,
+                             left: left, right: right,
                              start: start, length: noteFrames, total: totalFrames)
             } else {
                 renderNote(freq: freq, left: left, right: right,
@@ -109,9 +122,10 @@ final class HornEngine: ObservableObject {
         return buffer
     }
 
-    // MARK: - サンプル再生（リアルホーン）
+    // MARK: - サンプル再生（リアルホーン系）
 
-    private func renderSample(freq: Double, left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>,
+    private func renderSample(freq: Double, sample: [Float], sampleF0: Double,
+                              left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>,
                               start: Int, length: Int, total: Int) {
         let ratio = freq / sampleF0
         let attack = Int(0.005 * sampleRate)
@@ -120,6 +134,13 @@ final class HornEngine: ObservableObject {
         // 左右で微妙にピッチをずらしてツインホーンのうなりを出す
         let detune = pow(2.0, 8.0 / 1200.0)
         let gain: Float = 0.9
+
+        func sampleAt(_ pos: Double) -> Float? {
+            let i = Int(pos)
+            if i < 0 || i + 1 >= sampleCount { return nil }
+            let frac = Float(pos - Double(i))
+            return sample[i] * (1 - frac) + sample[i + 1] * frac
+        }
 
         for n in 0..<length {
             let gi = start + n
@@ -133,16 +154,9 @@ final class HornEngine: ObservableObject {
             let g = env * gain
             let posL = Double(n) * ratio
             let posR = Double(n) * ratio / detune
-            if let sl = sampleAt(posL, count: sampleCount) { left[gi] += sl * g }
-            if let sr = sampleAt(posR, count: sampleCount) { right[gi] += sr * g }
+            if let sl = sampleAt(posL) { left[gi] += sl * g }
+            if let sr = sampleAt(posR) { right[gi] += sr * g }
         }
-    }
-
-    private func sampleAt(_ pos: Double, count: Int) -> Float? {
-        let i = Int(pos)
-        if i < 0 || i + 1 >= count { return nil }
-        let frac = Float(pos - Double(i))
-        return sample[i] * (1 - frac) + sample[i + 1] * frac
     }
 
     // MARK: - 合成（電子ホーン）
