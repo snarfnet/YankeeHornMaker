@@ -23,10 +23,13 @@ final class HornEngine: ObservableObject {
     @Published var tone: HornTone = .bugle
     @Published var tempo: Double = 160
     @Published var loop = false
+    @Published var bikeSound = false { didSet { applyBikeSound() } }
 
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let reverb = AVAudioUnitReverb()
+    private let bikePlayer = AVAudioPlayerNode()
+    private var bikeBuffer: AVAudioPCMBuffer?
     private let sampleRate: Double = 44100
     private var configured = false
 
@@ -65,8 +68,28 @@ final class HornEngine: ObservableObject {
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
         engine.connect(player, to: reverb, format: format)
         engine.connect(reverb, to: engine.mainMixerNode, format: format)
+        // 直結マフラーの走行音（背景ループ、残響は通さず生音で）
+        engine.attach(bikePlayer)
+        if let url = Bundle.main.url(forResource: "BikeExhaust", withExtension: "wav"),
+           let file = try? AVAudioFile(forReading: url),
+           let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)),
+           (try? file.read(into: buf)) != nil {
+            bikeBuffer = buf
+            engine.connect(bikePlayer, to: engine.mainMixerNode, format: file.processingFormat)
+        }
         engine.prepare()
         try? engine.start()
+    }
+
+    private func applyBikeSound() {
+        configure()
+        if bikeSound {
+            guard let buf = bikeBuffer, !bikePlayer.isPlaying else { return }
+            bikePlayer.scheduleBuffer(buf, at: nil, options: .loops, completionHandler: nil)
+            bikePlayer.play()
+        } else {
+            bikePlayer.stop()
+        }
     }
 
     func stop() {
@@ -200,6 +223,7 @@ final class HornEngine: ObservableObject {
 
     deinit {
         player.stop()
+        bikePlayer.stop()
         engine.stop()
     }
 }

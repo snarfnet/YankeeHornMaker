@@ -80,6 +80,16 @@ struct PlayView: View {
                 ForEach(HornTone.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
+
+            HStack {
+                Label("直結マフラー", systemImage: "flame.fill")
+                    .font(Theme.bodyFont)
+                    .foregroundStyle(engine.bikeSound ? Theme.red : Theme.muted)
+                Spacer()
+                Toggle("", isOn: $engine.bikeSound)
+                    .labelsHidden()
+                    .tint(Theme.red)
+            }
         }
         .padding(14)
         .metalPanel(cornerRadius: 16)
