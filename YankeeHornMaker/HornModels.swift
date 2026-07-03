@@ -1,6 +1,6 @@
 import Foundation
 
-/// プリセットのホーンメロディ。-1 は休符。
+/// Preset horn melodies. `-1` means rest.
 struct HornPreset: Identifiable {
     let id = UUID()
     let name: String
@@ -9,24 +9,24 @@ struct HornPreset: Identifiable {
 }
 
 enum HornLibrary {
-    // C4 = 60。すべてパブリックドメイン曲かオリジナルの並び。
+    // C4 = 60. These are short original patterns for public horn-style playback.
     static let presets: [HornPreset] = [
         HornPreset(name: "パラリラ",
                    notes: [60, 64, 67, 72, 67, 64, 60, 64, 67, 72, 67, 64], tempo: 210),
         HornPreset(name: "パトカー",
                    notes: [69, 62, 69, 62, 69, 62, 69, 62], tempo: 130),
-        HornPreset(name: "突撃ラッパ",
+        HornPreset(name: "爆走ラッパ",
                    notes: [67, 72, 76, 79, -1, 76, 79, -1], tempo: 150),
-        HornPreset(name: "きらきら星",
+        HornPreset(name: "キラキラ星",
                    notes: [60, 60, 67, 67, 69, 69, 67, -1, 65, 65, 64, 64, 62, 62, 60, -1], tempo: 150),
-        HornPreset(name: "蛍の光",
+        HornPreset(name: "夜の帝王",
                    notes: [67, 72, 72, 72, 76, 74, 72, 74, 76, 72, 72, 76, 79], tempo: 120),
         HornPreset(name: "昇天スケール",
                    notes: [60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79], tempo: 220)
     ]
 }
 
-/// 自作したホーンメロディの保存単位。
+/// User-saved horn melody.
 struct SavedMelody: Codable, Identifiable {
     var id = UUID()
     var name: String
@@ -35,7 +35,7 @@ struct SavedMelody: Codable, Identifiable {
     var tone: String
 }
 
-/// 自作メロディをUserDefaultsに永続化するストア。
+/// Tiny persistence store for user melodies.
 final class MelodyStore: ObservableObject {
     @Published private(set) var melodies: [SavedMelody] = []
     private let key = "saved_melodies"
@@ -66,8 +66,9 @@ final class MelodyStore: ObservableObject {
 
 enum NoteName {
     private static let names = ["ド", "ド#", "レ", "レ#", "ミ", "ファ", "ファ#", "ソ", "ソ#", "ラ", "ラ#", "シ"]
+
     static func label(_ midi: Int) -> String {
-        guard midi >= 0 else { return "—" }
+        guard midi >= 0 else { return "-" }
         return names[((midi % 12) + 12) % 12]
     }
 }

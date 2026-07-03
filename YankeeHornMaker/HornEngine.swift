@@ -5,9 +5,9 @@ enum HornTone: String, CaseIterable, Codable, Identifiable {
     case bugle = "リアルホーン"
     case horn = "重低音ホーン"
     case electronic = "電子ホーン"
+
     var id: String { rawValue }
 
-    /// 同梱サンプルのファイル名と基準ピッチ。electronicはサンプルを持たない。
     var sampleInfo: (resource: String, f0: Double)? {
         switch self {
         case .bugle: return ("BugleNote", 464.2)
@@ -17,9 +17,7 @@ enum HornTone: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-/// 族のミュージックホーンを鳴らすエンジン。
-/// リアルホーン系は同梱したホーンの録音をピッチシフトして鳴らす。
-/// 電子ホーンは倍音加算合成で鳴らす。どちらもメロディ全体を1バッファに描画する。
+/// Renders short horn melodies into one audio buffer and plays them.
 final class HornEngine: ObservableObject {
     @Published var isPlaying = false
     @Published var tone: HornTone = .bugle
@@ -31,7 +29,6 @@ final class HornEngine: ObservableObject {
     private let sampleRate: Double = 44100
     private var configured = false
 
-    // 同梱サンプル（音色ごとの波形）
     private var samples: [HornTone: [Float]] = [:]
 
     init() {
@@ -77,7 +74,7 @@ final class HornEngine: ObservableObject {
         self.tempo = tempo
         self.tone = tone
         self.loop = loop
-        guard let buffer = renderBuffer(notes: notes) else { return }
+        guard let buffer = renderBuffer(notes: notes, tempo: tempo, tone: tone) else { return }
         isPlaying = true
         if loop {
             player.scheduleBuffer(buffer, at: nil, options: .loops, completionHandler: nil)
@@ -89,11 +86,8 @@ final class HornEngine: ObservableObject {
         player.play()
     }
 
-    // MARK: - 描画
-
-    private func renderBuffer(notes: [Int]) -> AVAudioPCMBuffer? {
+    private func renderBuffer(notes: [Int], tempo: Double, tone: HornTone) -> AVAudioPCMBuffer? {
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
-        // tempo は4分音符BPM。ホーンは8分音符刻みで鳴らす。
         let secondsPerStep = 60.0 / max(tempo, 30) / 2.0
         let framesPerStep = Int(secondsPerStep * sampleRate)
         let totalFrames = framesPerStep * max(notes.count, 1)
@@ -102,9 +96,12 @@ final class HornEngine: ObservableObject {
         buffer.frameLength = AVAudioFrameCount(totalFrames)
         let left = buffer.floatChannelData![0]
         let right = buffer.floatChannelData![1]
-        for i in 0..<totalFrames { left[i] = 0; right[i] = 0 }
+        for i in 0..<totalFrames {
+            left[i] = 0
+            right[i] = 0
+        }
 
-        let gate = 0.85 // 発音長。残りは無音でパラリラの粒立ちを作る
+        let gate = 0.85
         let noteFrames = Int(Double(framesPerStep) * gate)
         let sample = samples[tone]
         for (idx, note) in notes.enumerated() where note >= 0 {
@@ -122,8 +119,6 @@ final class HornEngine: ObservableObject {
         return buffer
     }
 
-    // MARK: - サンプル再生（リアルホーン系）
-
     private func renderSample(freq: Double, sample: [Float], sampleF0: Double,
                               left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>,
                               start: Int, length: Int, total: Int) {
@@ -131,7 +126,6 @@ final class HornEngine: ObservableObject {
         let attack = Int(0.005 * sampleRate)
         let release = Int(0.02 * sampleRate)
         let sampleCount = sample.count
-        // 左右で微妙にピッチをずらしてツインホーンのうなりを出す
         let detune = pow(2.0, 8.0 / 1200.0)
         let gain: Float = 0.9
 
@@ -159,13 +153,10 @@ final class HornEngine: ObservableObject {
         }
     }
 
-    // MARK: - 合成（電子ホーン）
-
     private func renderNote(freq: Double, left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>,
                             start: Int, length: Int, total: Int) {
-        // 奇数倍音強め = 電子ミュージックホーンの矩形波っぽさ
         let harmonics = [1.0, 0.12, 0.55, 0.08, 0.35, 0.06, 0.24, 0.04, 0.17, 0.03]
-        let detune = pow(2.0, 3.0 / 1200.0) // 左右で微デチューン=ツインホーンのうなり
+        let detune = pow(2.0, 3.0 / 1200.0)
         let freqL = freq
         let freqR = freq * detune
         let attack = 0.008 * sampleRate
