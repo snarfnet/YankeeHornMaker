@@ -81,14 +81,17 @@ struct PlayView: View {
             }
             .pickerStyle(.segmented)
 
-            HStack {
-                Label("直結マフラー", systemImage: "flame.fill")
-                    .font(Theme.bodyFont)
-                    .foregroundStyle(engine.bikeSound ? Theme.red : Theme.muted)
-                Spacer()
-                Toggle("", isOn: $engine.bikeSound)
-                    .labelsHidden()
-                    .tint(Theme.red)
+            VStack(spacing: 8) {
+                HStack {
+                    Label("直結マフラー", systemImage: "flame.fill")
+                        .font(Theme.bodyFont)
+                        .foregroundStyle(engine.bikeSound == .off ? Theme.muted : Theme.red)
+                    Spacer()
+                }
+                Picker("直結マフラー", selection: $engine.bikeSound) {
+                    ForEach(BikeSound.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
             }
         }
         .padding(14)
