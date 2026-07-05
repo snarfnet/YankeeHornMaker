@@ -1,8 +1,14 @@
 import SwiftUI
 
+struct ExportItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
 struct MakeView: View {
     @ObservedObject var engine: HornEngine
     @ObservedObject var store: MelodyStore
+    @ObservedObject var midi: MIDIManager
 
     private let stepCount = 16
     private let pitches = Array((60...72).reversed())
@@ -10,6 +16,9 @@ struct MakeView: View {
     @State private var tempo: Double = 180
     @State private var name = ""
     @State private var showSaved = false
+    @State private var exportItem: ExportItem?
+    @State private var midiInput = false
+    @State private var cursor = 0
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -28,6 +37,14 @@ struct MakeView: View {
         }
         .background(AppBackdrop())
         .sheet(isPresented: $showSaved) { savedSheet }
+        .sheet(item: $exportItem) { ShareSheet(items: [$0.url]) }
+        .onChange(of: midi.noteCount) { _ in
+            guard midiInput else { return }
+            inputMIDINote(midi.lastNote)
+        }
+        .onChange(of: midiInput) { on in
+            if on { cursor = 0 }
+        }
     }
 
     private var header: some View {
@@ -120,6 +137,11 @@ struct MakeView: View {
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .stroke(on ? Theme.red : Theme.gold.opacity(0.20), lineWidth: on ? 1.3 : 0.8)
                 )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(Theme.purple, lineWidth: 2)
+                        .opacity(midiInput && step == cursor ? 1 : 0)
+                )
                 .shadow(color: on ? Theme.gold.opacity(0.42) : .clear, radius: 7)
         }
         .buttonStyle(.plain)
@@ -183,9 +205,56 @@ struct MakeView: View {
                 .chromeIconButton()
                 .accessibilityLabel("保存")
             }
+
+            HStack(spacing: 10) {
+                Label("書き出し", systemImage: "square.and.arrow.up.fill")
+                    .font(Theme.bodyFont)
+                    .foregroundStyle(Theme.text)
+                Spacer()
+                ForEach(ExportFormat.allCases) { format in
+                    Button(format.rawValue) {
+                        export(format)
+                    }
+                    .buttonStyle(BrushButtonStyle(kind: .dark))
+                    .frame(width: 88)
+                }
+            }
+
+            HStack(spacing: 10) {
+                Label("MIDI入力", systemImage: "pianokeys")
+                    .font(Theme.bodyFont)
+                    .foregroundStyle(midi.isConnected ? Theme.gold : Theme.muted)
+                Text(midi.isConnected ? "接続中" : "未接続")
+                    .font(.system(size: 12, weight: .black, design: .rounded))
+                    .foregroundStyle(midi.isConnected ? Theme.red : Theme.muted)
+                Spacer()
+                Text("打ち込み")
+                    .font(Theme.bodyFont)
+                    .foregroundStyle(Theme.text)
+                Toggle("", isOn: $midiInput)
+                    .labelsHidden()
+                    .tint(Theme.red)
+            }
         }
         .padding(14)
         .metalPanel(cornerRadius: 18, isHot: true)
+    }
+
+    private func export(_ format: ExportFormat) {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "YankeeHorn" : name
+        if let url = engine.export(notes: steps, tempo: tempo, tone: engine.tone, name: n, format: format) {
+            exportItem = ExportItem(url: url)
+        }
+    }
+
+    /// MIDIで受けた音をステップ盤に打ち込む。表示範囲(60...72)へオクターブ移調してカーソルを進める。
+    private func inputMIDINote(_ note: Int) {
+        guard note >= 0 else { return }
+        var n = note
+        while n < 60 { n += 12 }
+        while n > 72 { n -= 12 }
+        steps[cursor] = n
+        cursor = (cursor + 1) % stepCount
     }
 
     private var savedSheet: some View {

@@ -3,6 +3,7 @@ import AVFoundation
 
 enum HornTone: String, CaseIterable, Codable, Identifiable {
     case bugle = "リアルホーン"
+    case shrill = "甲高いホーン"
     case horn = "重低音ホーン"
     case electronic = "電子ホーン"
 
@@ -11,6 +12,8 @@ enum HornTone: String, CaseIterable, Codable, Identifiable {
     var sampleInfo: (resource: String, f0: Double)? {
         switch self {
         case .bugle: return ("BugleNote", 464.2)
+        // 同じラッパ音源を基準ピッチ半分で鳴らし、1オクターブ上の甲高い音色にする
+        case .shrill: return ("BugleNote", 232.1)
         case .horn: return ("HornNote", 308.4)
         case .electronic: return nil
         }
@@ -34,6 +37,15 @@ enum BikeSound: String, CaseIterable, Identifiable {
     }
 }
 
+/// メロディを書き出すファイル形式。MP3は非対応（iOS標準でエンコード不可）。
+enum ExportFormat: String, CaseIterable, Identifiable {
+    case aiff = "AIFF"
+    case m4a = "M4A"
+
+    var id: String { rawValue }
+    var ext: String { self == .aiff ? "aiff" : "m4a" }
+}
+
 /// Renders short horn melodies into one audio buffer and plays them.
 final class HornEngine: ObservableObject {
     @Published var isPlaying = false
@@ -44,6 +56,7 @@ final class HornEngine: ObservableObject {
 
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
+    private let livePlayer = AVAudioPlayerNode()
     private let reverb = AVAudioUnitReverb()
     private let bikePlayer = AVAudioPlayerNode()
     private var bikeBuffers: [BikeSound: AVAudioPCMBuffer] = [:]
@@ -85,6 +98,9 @@ final class HornEngine: ObservableObject {
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
         engine.connect(player, to: reverb, format: format)
         engine.connect(reverb, to: engine.mainMixerNode, format: format)
+        // MIDIライブ演奏用（残響を通す）
+        engine.attach(livePlayer)
+        engine.connect(livePlayer, to: reverb, format: format)
         // 直結マフラーの排気音（背景ループ、残響は通さず生音で）
         engine.attach(bikePlayer)
         var bikeFormat: AVAudioFormat?
@@ -133,6 +149,53 @@ final class HornEngine: ObservableObject {
             }
         }
         player.play()
+    }
+
+    /// MIDIキーで押した1音を、いまの音色で即座に鳴らす。新しい音が前の音を切る（モノフォニック）。
+    func playLive(_ midi: Int) {
+        guard midi >= 0 else { return }
+        configure()
+        guard let buffer = renderBuffer(notes: [midi], tempo: 60, tone: tone) else { return }
+        livePlayer.stop()
+        livePlayer.scheduleBuffer(buffer, at: nil, options: [], completionHandler: nil)
+        livePlayer.play()
+    }
+
+    /// メロディをAIFF/M4Aで書き出し、共有用の一時ファイルURLを返す。
+    func export(notes: [Int], tempo: Double, tone: HornTone, name: String, format: ExportFormat) -> URL? {
+        guard let buffer = renderBuffer(notes: notes, tempo: tempo, tone: tone) else { return nil }
+        let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+        let base = cleaned.isEmpty ? "YankeeHorn" : cleaned
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(base).\(format.ext)")
+        try? FileManager.default.removeItem(at: url)
+
+        let settings: [String: Any]
+        switch format {
+        case .aiff:
+            settings = [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: sampleRate,
+                AVNumberOfChannelsKey: 2,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsBigEndianKey: true
+            ]
+        case .m4a:
+            settings = [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: sampleRate,
+                AVNumberOfChannelsKey: 2,
+                AVEncoderBitRateKey: 128_000
+            ]
+        }
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: settings)
+            try file.write(from: buffer)
+            return url
+        } catch {
+            return nil
+        }
     }
 
     private func renderBuffer(notes: [Int], tempo: Double, tone: HornTone) -> AVAudioPCMBuffer? {
@@ -243,6 +306,7 @@ final class HornEngine: ObservableObject {
 
     deinit {
         player.stop()
+        livePlayer.stop()
         bikePlayer.stop()
         engine.stop()
     }

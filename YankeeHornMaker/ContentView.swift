@@ -3,15 +3,20 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var engine = HornEngine()
     @StateObject private var store = MelodyStore()
+    @StateObject private var midi = MIDIManager()
 
     var body: some View {
         TabView {
             PlayView(engine: engine)
                 .tabItem { Label("鳴らす", systemImage: "speaker.wave.3.fill") }
-            MakeView(engine: engine, store: store)
+            MakeView(engine: engine, store: store, midi: midi)
                 .tabItem { Label("作る", systemImage: "square.grid.3x3.fill") }
         }
         .tint(Theme.gold)
+        .onAppear {
+            midi.onNoteOn = { note in engine.playLive(note) }
+            midi.start()
+        }
     }
 }
 
