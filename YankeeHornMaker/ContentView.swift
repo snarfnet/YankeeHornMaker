@@ -24,25 +24,22 @@ struct PlayView: View {
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
     var body: some View {
-        ZStack {
-            AppBackdrop()
-
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 16) {
-                    titleBlock
-                    tonePanel
-                    presetGrid
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, 12)
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 16) {
+                titleBlock
+                tonePanel
+                presetGrid
             }
-            .safeAreaInset(edge: .bottom) {
-                stopButton
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
-            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
         }
+        .safeAreaInset(edge: .bottom) {
+            stopButton
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+        }
+        .background(AppBackdrop())
     }
 
     private var titleBlock: some View {

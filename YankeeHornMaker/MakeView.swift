@@ -12,24 +12,21 @@ struct MakeView: View {
     @State private var showSaved = false
 
     var body: some View {
-        ZStack {
-            AppBackdrop()
-
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 12) {
-                    header
-                    grid
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, 12)
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 12) {
+                header
+                grid
             }
-            .safeAreaInset(edge: .bottom) {
-                controls
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
-            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
         }
+        .safeAreaInset(edge: .bottom) {
+            controls
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+        }
+        .background(AppBackdrop())
         .sheet(isPresented: $showSaved) { savedSheet }
     }
 
