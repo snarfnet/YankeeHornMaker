@@ -19,12 +19,15 @@ final class MIDIManager: ObservableObject {
     func start() {
         guard !started else { return }
         started = true
-        MIDIClientCreateWithBlock("YankeeHornClient" as CFString, &client) { [weak self] _ in
+        // CoreMIDIのセットアップに失敗しても起動は止めない。失敗したら黙って諦める。
+        let clientStatus = MIDIClientCreateWithBlock("YankeeHornClient" as CFString, &client) { [weak self] _ in
             self?.connectAllSources()
         }
-        MIDIInputPortCreateWithProtocol(client, "YankeeHornIn" as CFString, ._1_0, &port) { [weak self] eventList, _ in
+        guard clientStatus == noErr else { return }
+        let portStatus = MIDIInputPortCreateWithProtocol(client, "YankeeHornIn" as CFString, ._1_0, &port) { [weak self] eventList, _ in
             self?.receive(eventList)
         }
+        guard portStatus == noErr else { return }
         connectAllSources()
     }
 
@@ -40,7 +43,8 @@ final class MIDIManager: ObservableObject {
         let list = eventList.pointee
         var packet = list.packet
         for _ in 0..<list.numPackets {
-            let count = Int(packet.wordCount)
+            // wordCountは最大64（MIDIEventPacket.wordsは64語の固定タプル）。壊れた値でも範囲外読みしない。
+            let count = min(Int(packet.wordCount), 64)
             withUnsafePointer(to: packet.words) { tuplePtr in
                 tuplePtr.withMemoryRebound(to: UInt32.self, capacity: count) { words in
                     for i in 0..<count {
