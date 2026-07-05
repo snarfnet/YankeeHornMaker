@@ -15,7 +15,10 @@ struct ContentView: View {
         .tint(Theme.gold)
         .onAppear {
             midi.onNoteOn = { note in engine.playLive(note) }
-            midi.start()
+            // 起動フレームでCoreMIDIを触ると落ちる端末があるため、描画が落ち着いてから起動する
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                midi.start()
+            }
         }
     }
 }
