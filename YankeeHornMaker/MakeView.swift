@@ -15,16 +15,15 @@ struct MakeView: View {
         ZStack {
             AppBackdrop()
 
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 14) {
-                    header
-                    grid
-                    controls
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, 24)
+            VStack(spacing: 12) {
+                header
+                grid
+                    .frame(maxHeight: .infinity)
+                controls
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
         }
         .sheet(isPresented: $showSaved) { savedSheet }
     }
@@ -66,7 +65,7 @@ struct MakeView: View {
                     .foregroundStyle(Theme.red)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView([.horizontal, .vertical], showsIndicators: false) {
                 VStack(spacing: 5) {
                     beatNumbers
                     ForEach(pitches, id: \.self) { pitch in
