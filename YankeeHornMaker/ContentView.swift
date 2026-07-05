@@ -27,15 +27,21 @@ struct PlayView: View {
         ZStack {
             AppBackdrop()
 
-            VStack(spacing: 16) {
-                titleBlock
-                tonePanel
-                presetGrid
-                stopButton
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 16) {
+                    titleBlock
+                    tonePanel
+                    presetGrid
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 12)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
+            .safeAreaInset(edge: .bottom) {
+                stopButton
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+            }
         }
     }
 
@@ -99,20 +105,18 @@ struct PlayView: View {
     }
 
     private var presetGrid: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(HornLibrary.presets) { preset in
-                    Button {
-                        selected = preset.id
-                        engine.play(notes: preset.notes, tempo: preset.tempo, tone: engine.tone, loop: engine.loop)
-                    } label: {
-                        PresetCard(preset: preset, isSelected: selected == preset.id)
-                    }
-                    .buttonStyle(.plain)
+        LazyVGrid(columns: columns, spacing: 12) {
+            ForEach(HornLibrary.presets) { preset in
+                Button {
+                    selected = preset.id
+                    engine.play(notes: preset.notes, tempo: preset.tempo, tone: engine.tone, loop: engine.loop)
+                } label: {
+                    PresetCard(preset: preset, isSelected: selected == preset.id)
                 }
+                .buttonStyle(.plain)
             }
-            .padding(.vertical, 2)
         }
+        .padding(.vertical, 2)
     }
 
     private var stopButton: some View {
