@@ -19,11 +19,15 @@ struct MakeView: View {
                 VStack(spacing: 12) {
                     header
                     grid
-                    controls
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
-                .padding(.bottom, 24)
+                .padding(.bottom, 12)
+            }
+            .safeAreaInset(edge: .bottom) {
+                controls
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
             }
         }
         .sheet(isPresented: $showSaved) { savedSheet }
