@@ -57,6 +57,7 @@ final class HornEngine: ObservableObject {
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let livePlayer = AVAudioPlayerNode()
+    private let voiceMixer = AVAudioMixerNode()
     private let reverb = AVAudioUnitReverb()
     private let bikePlayer = AVAudioPlayerNode()
     private var bikeBuffers: [BikeSound: AVAudioPCMBuffer] = [:]
@@ -91,16 +92,19 @@ final class HornEngine: ObservableObject {
         try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         try? session.setActive(true)
         engine.attach(player)
+        engine.attach(livePlayer)
+        engine.attach(voiceMixer)
         engine.attach(reverb)
         // 族のトンネルサウンドっぽく大きめの残響を薄めにかける
         reverb.loadFactoryPreset(.largeHall)
         reverb.wetDryMix = 28
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
-        engine.connect(player, to: reverb, format: format)
+        // メロディ再生とMIDIライブ演奏をミキサーでまとめてから残響へ。
+        // reverbはエフェクトで入力が1つだけなので、2つの再生ノードを直結すると落ちる。
+        engine.connect(player, to: voiceMixer, format: format)
+        engine.connect(livePlayer, to: voiceMixer, format: format)
+        engine.connect(voiceMixer, to: reverb, format: format)
         engine.connect(reverb, to: engine.mainMixerNode, format: format)
-        // MIDIライブ演奏用（残響を通す）
-        engine.attach(livePlayer)
-        engine.connect(livePlayer, to: reverb, format: format)
         // 直結マフラーの排気音（背景ループ、残響は通さず生音で）
         engine.attach(bikePlayer)
         var bikeFormat: AVAudioFormat?
