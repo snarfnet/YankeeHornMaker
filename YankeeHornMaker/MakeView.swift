@@ -19,6 +19,8 @@ struct MakeView: View {
     @State private var exportItem: ExportItem?
     @State private var midiInput = false
     @State private var cursor = 0
+    @State private var previousSteps: [Int]?
+    @State private var savedMessage: String?
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -38,6 +40,19 @@ struct MakeView: View {
         .background(AppBackdrop())
         .sheet(isPresented: $showSaved) { savedSheet }
         .sheet(item: $exportItem) { ShareSheet(items: [$0.url]) }
+        .overlay(alignment: .top) {
+            if let savedMessage {
+                Label(savedMessage, systemImage: "checkmark.circle.fill")
+                    .font(Theme.bodyFont)
+                    .foregroundStyle(Color.black)
+                    .padding(.horizontal, 16)
+                    .frame(height: 44)
+                    .background(Capsule().fill(Theme.gold))
+                    .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .onChange(of: midi.noteCount) { _ in
             guard midiInput else { return }
             inputMIDINote(midi.lastNote)
@@ -84,6 +99,32 @@ struct MakeView: View {
                     .foregroundStyle(Theme.red)
             }
 
+            HStack(spacing: 8) {
+                Button {
+                    guard let previousSteps else { return }
+                    let current = steps
+                    steps = previousSteps
+                    self.previousSteps = current
+                } label: {
+                    Label("戻す", systemImage: "arrow.uturn.backward")
+                }
+                .disabled(previousSteps == nil)
+
+                Button(role: .destructive) {
+                    rememberSteps()
+                    steps = Array(repeating: -1, count: stepCount)
+                } label: {
+                    Label("全消去", systemImage: "trash")
+                }
+
+                Spacer()
+                Text("マスをタップして音を置く")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.muted)
+            }
+            .font(.system(size: 13, weight: .bold, design: .rounded))
+            .buttonStyle(.borderless)
+
             ScrollView(.horizontal, showsIndicators: false) {
                 VStack(spacing: 5) {
                     beatNumbers
@@ -122,6 +163,7 @@ struct MakeView: View {
     private func stepCell(step: Int, pitch: Int) -> some View {
         let on = steps[step] == pitch
         return Button {
+            rememberSteps()
             steps[step] = on ? -1 : pitch
         } label: {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -154,6 +196,18 @@ struct MakeView: View {
                 ForEach(HornTone.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
+
+            HStack(spacing: 10) {
+                Label("荒さ", systemImage: "bolt.fill")
+                    .font(Theme.bodyFont)
+                    .foregroundStyle(Theme.text)
+                Slider(value: $engine.grit, in: 0...1)
+                    .tint(Theme.red)
+                Text("\(Int(engine.grit * 100))")
+                    .font(.system(size: 13, weight: .black, design: .monospaced))
+                    .foregroundStyle(Theme.gold)
+                    .frame(width: 28, alignment: .trailing)
+            }
 
             VStack(spacing: 8) {
                 HStack {
@@ -199,6 +253,12 @@ struct MakeView: View {
                     let n = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "MY HORN" : name
                     store.add(SavedMelody(name: n, notes: steps, tempo: tempo, tone: engine.tone.rawValue))
                     name = ""
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        savedMessage = "「\(n)」を保存しました"
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation { savedMessage = nil }
+                    }
                 } label: {
                     Image(systemName: "square.and.arrow.down.fill")
                 }
@@ -253,6 +313,7 @@ struct MakeView: View {
         var n = note
         while n < 60 { n += 12 }
         while n > 72 { n -= 12 }
+        rememberSteps()
         steps[cursor] = n
         cursor = (cursor + 1) % stepCount
     }
@@ -266,6 +327,7 @@ struct MakeView: View {
                 }
                 ForEach(store.melodies) { melody in
                     Button {
+                        rememberSteps()
                         steps = normalized(melody.notes)
                         tempo = melody.tempo
                         engine.tone = HornTone(rawValue: melody.tone) ?? .bugle
@@ -293,5 +355,9 @@ struct MakeView: View {
         var result = Array(notes.prefix(stepCount))
         while result.count < stepCount { result.append(-1) }
         return result
+    }
+
+    private func rememberSteps() {
+        previousSteps = steps
     }
 }

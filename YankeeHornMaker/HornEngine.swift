@@ -52,6 +52,8 @@ final class HornEngine: ObservableObject {
     @Published var tone: HornTone = .bugle
     @Published var tempo: Double = 160
     @Published var loop = false
+    @Published var grit: Double = 0.62
+    @Published var humanFeel: Double = 0.48
     @Published var bikeSound: BikeSound = .off { didSet { applyBikeSound() } }
 
     private let engine = AVAudioEngine()
@@ -96,8 +98,8 @@ final class HornEngine: ObservableObject {
         engine.attach(voiceMixer)
         engine.attach(reverb)
         // 族のトンネルサウンドっぽく大きめの残響を薄めにかける
-        reverb.loadFactoryPreset(.largeHall)
-        reverb.wetDryMix = 28
+        reverb.loadFactoryPreset(.plate)
+        reverb.wetDryMix = 19
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
         // メロディ再生とMIDIライブ演奏をミキサーでまとめてから残響へ。
         // reverbはエフェクトで入力が1つだけなので、2つの再生ノードを直結すると落ちる。
@@ -221,8 +223,13 @@ final class HornEngine: ObservableObject {
         let noteFrames = Int(Double(framesPerStep) * gate)
         let sample = samples[tone]
         for (idx, note) in notes.enumerated() where note >= 0 {
-            let freq = 440.0 * pow(2.0, (Double(note) - 69.0) / 12.0)
-            let start = idx * framesPerStep
+            // A repeatable imperfection: each step lands and tunes a little differently,
+            // like the same person leaning on a real horn switch.
+            let character = sin(Double(idx * 37 + note * 11))
+            let cents = character * 16.0 * humanFeel
+            let freq = 440.0 * pow(2.0, (Double(note) - 69.0) / 12.0) * pow(2.0, cents / 1200.0)
+            let drag = Int(max(0, character) * Double(framesPerStep) * 0.055 * humanFeel)
+            let start = min(idx * framesPerStep + drag, totalFrames - 1)
             if let sample = sample, let info = tone.sampleInfo, !sample.isEmpty {
                 renderSample(freq: freq, sample: sample, sampleF0: info.f0,
                              left: left, right: right,
@@ -232,7 +239,29 @@ final class HornEngine: ObservableObject {
                            start: start, length: noteFrames, total: totalFrames)
             }
         }
+        applyGrit(left: left, right: right, frameCount: totalFrames)
         return buffer
+    }
+
+    private func applyGrit(left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>, frameCount: Int) {
+        guard grit > 0 else { return }
+        let drive = Float(1.0 + grit * 4.2)
+        let output = Float(1.0 / (1.0 + grit * 0.72))
+        var previousL: Float = 0
+        var previousR: Float = 0
+
+        for frame in 0..<frameCount {
+            // Uneven analogue-style saturation and a slight horn-cabinet smear.
+            let biasedL = left[frame] * drive + 0.018 * Float(grit)
+            let biasedR = right[frame] * drive - 0.012 * Float(grit)
+            let clippedL = tanh(biasedL) * output
+            let clippedR = tanh(biasedR) * output
+            let smear = Float(0.10 + grit * 0.12)
+            previousL += (clippedL - previousL) * (1 - smear)
+            previousR += (clippedR - previousR) * (1 - smear)
+            left[frame] = previousL
+            right[frame] = previousR
+        }
     }
 
     private func renderSample(freq: Double, sample: [Float], sampleF0: Double,

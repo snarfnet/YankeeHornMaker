@@ -28,6 +28,7 @@ struct ContentView: View {
 struct PlayView: View {
     @ObservedObject var engine: HornEngine
     @State private var selected: UUID?
+    @State private var searchText = ""
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
@@ -36,6 +37,7 @@ struct PlayView: View {
             VStack(spacing: 16) {
                 titleBlock
                 tonePanel
+                searchBar
                 presetGrid
             }
             .padding(.horizontal, 16)
@@ -48,6 +50,33 @@ struct PlayView: View {
                 .padding(.bottom, 6)
         }
         .background(AppBackdrop())
+    }
+
+    private var filteredPresets: [HornPreset] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return HornLibrary.presets }
+        return HornLibrary.presets.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(Theme.gold)
+            TextField("曲名で探す", text: $searchText)
+                .font(Theme.bodyFont)
+                .foregroundStyle(Theme.text)
+                .textInputAutocapitalization(.never)
+            if !searchText.isEmpty {
+                Button { searchText = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Theme.muted)
+                }
+                .accessibilityLabel("検索を消す")
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 46)
+        .metalPanel(cornerRadius: 14)
     }
 
     private var titleBlock: some View {
@@ -92,6 +121,8 @@ struct PlayView: View {
             }
             .pickerStyle(.segmented)
 
+            characterControls
+
             VStack(spacing: 8) {
                 HStack {
                     Label("直結マフラー", systemImage: "flame.fill")
@@ -109,9 +140,34 @@ struct PlayView: View {
         .metalPanel(cornerRadius: 16)
     }
 
+    private var characterControls: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Label("荒さ", systemImage: "bolt.fill")
+                    .frame(width: 72, alignment: .leading)
+                Slider(value: $engine.grit, in: 0...1)
+                    .tint(Theme.red)
+                Text("\(Int(engine.grit * 100))")
+                    .monospacedDigit()
+                    .frame(width: 28, alignment: .trailing)
+            }
+            HStack(spacing: 10) {
+                Label("人間味", systemImage: "hand.raised.fill")
+                    .frame(width: 72, alignment: .leading)
+                Slider(value: $engine.humanFeel, in: 0...1)
+                    .tint(Theme.gold)
+                Text("\(Int(engine.humanFeel * 100))")
+                    .monospacedDigit()
+                    .frame(width: 28, alignment: .trailing)
+            }
+        }
+        .font(.system(size: 13, weight: .bold, design: .rounded))
+        .foregroundStyle(Theme.text)
+    }
+
     private var presetGrid: some View {
         LazyVGrid(columns: columns, spacing: 12) {
-            ForEach(HornLibrary.presets) { preset in
+            ForEach(filteredPresets) { preset in
                 Button {
                     selected = preset.id
                     engine.play(notes: preset.notes, tempo: preset.tempo, tone: engine.tone, loop: engine.loop)
@@ -120,6 +176,22 @@ struct PlayView: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            if filteredPresets.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(Theme.gold)
+                    Text("曲が見つかりません").font(Theme.sectionFont)
+                    Text("別の曲名で探してください")
+                        .font(Theme.bodyFont)
+                        .foregroundStyle(Theme.muted)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+                .foregroundStyle(Theme.text)
+                .gridCellColumns(2)
+            }
         }
         .padding(.vertical, 2)
     }
@@ -127,8 +199,18 @@ struct PlayView: View {
     private var stopButton: some View {
         Button {
             engine.stop()
+            selected = nil
         } label: {
-            Label("止める", systemImage: "stop.fill")
+            HStack {
+                if let preset = HornLibrary.presets.first(where: { $0.id == selected }), engine.isPlaying {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("再生中").font(.system(size: 10, weight: .bold))
+                        Text(preset.name).lineLimit(1)
+                    }
+                    Spacer()
+                }
+                Label("止める", systemImage: "stop.fill")
+            }
         }
         .buttonStyle(BrushButtonStyle(kind: .red))
         .opacity(engine.isPlaying ? 1 : 0.55)

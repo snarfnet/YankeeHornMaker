@@ -2,15 +2,15 @@ import SwiftUI
 
 enum Theme {
     static let bg = Color(red: 0.025, green: 0.020, blue: 0.030)
-    static let panel = Color(red: 0.075, green: 0.065, blue: 0.080)
-    static let panelHot = Color(red: 0.150, green: 0.105, blue: 0.115)
-    static let gold = Color(red: 1.0, green: 0.735, blue: 0.080)
-    static let deepGold = Color(red: 0.650, green: 0.365, blue: 0.020)
-    static let red = Color(red: 0.925, green: 0.060, blue: 0.040)
-    static let purple = Color(red: 0.620, green: 0.090, blue: 1.0)
-    static let chrome = Color(red: 0.840, green: 0.880, blue: 0.900)
-    static let text = Color(red: 0.980, green: 0.955, blue: 0.900)
-    static let muted = Color(red: 0.720, green: 0.660, blue: 0.600)
+    static let panel = Color(red: 0.070, green: 0.060, blue: 0.052)
+    static let panelHot = Color(red: 0.165, green: 0.065, blue: 0.040)
+    static let gold = Color(red: 0.925, green: 0.610, blue: 0.105)
+    static let deepGold = Color(red: 0.475, green: 0.255, blue: 0.045)
+    static let red = Color(red: 0.735, green: 0.035, blue: 0.020)
+    static let purple = Color(red: 0.180, green: 0.210, blue: 0.235)
+    static let chrome = Color(red: 0.690, green: 0.710, blue: 0.700)
+    static let text = Color(red: 0.930, green: 0.885, blue: 0.790)
+    static let muted = Color(red: 0.590, green: 0.535, blue: 0.455)
     static let ink = Color.black.opacity(0.72)
 
     static let titleFont = Font.system(size: 34, weight: .black, design: .rounded)
@@ -21,16 +21,16 @@ enum Theme {
 struct AppBackdrop: View {
     var body: some View {
         ZStack {
-            Image("YankiiBackground")
+            Image("YankiiGritBackground")
                 .resizable()
                 .scaledToFill()
                 .ignoresSafeArea()
 
             LinearGradient(
                 colors: [
-                    .black.opacity(0.08),
-                    .black.opacity(0.36),
-                    .black.opacity(0.70)
+                    .black.opacity(0.18),
+                    .black.opacity(0.42),
+                    .black.opacity(0.76)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -82,7 +82,7 @@ struct MetalPanel: ViewModifier {
                                 lineWidth: 1.4
                             )
                     )
-                    .shadow(color: Theme.purple.opacity(0.28), radius: 14, x: 0, y: 8)
+                    .shadow(color: Theme.red.opacity(0.18), radius: 12, x: 0, y: 8)
                     .shadow(color: .black.opacity(0.45), radius: 10, x: 0, y: 6)
             )
     }
@@ -109,9 +109,9 @@ struct BrushButtonStyle: ButtonStyle {
             .foregroundStyle(kind == .gold ? Color.black : Theme.text)
             .frame(maxWidth: .infinity, minHeight: 54)
             .background(background)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .stroke(Theme.chrome.opacity(0.28), lineWidth: 1)
             )
             .shadow(color: shadowColor, radius: configuration.isPressed ? 4 : 10, x: 0, y: configuration.isPressed ? 2 : 8)
