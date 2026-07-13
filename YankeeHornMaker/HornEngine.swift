@@ -66,6 +66,14 @@ final class HornEngine: ObservableObject {
     private let sampleRate: Double = 44100
     private var configured = false
 
+    // ループ再生の状態。編集中でも次の周回で反映できるよう、鳴らす音を保持し続ける。
+    private let loopQueue = DispatchQueue(label: "com.yankeehorn.loop")
+    private var isLooping = false
+    private var loopGeneration = 0
+    private var loopNotes: [Int] = []
+    private var loopTempo: Double = 160
+    private var loopTone: HornTone = .bugle
+
     private var samples: [HornTone: [Float]] = [:]
 
     init() {
@@ -135,6 +143,10 @@ final class HornEngine: ObservableObject {
     }
 
     func stop() {
+        loopQueue.async {
+            self.loopGeneration += 1
+            self.isLooping = false
+        }
         player.stop()
         isPlaying = false
     }
@@ -145,16 +157,52 @@ final class HornEngine: ObservableObject {
         self.tempo = tempo
         self.tone = tone
         self.loop = loop
-        guard let buffer = renderBuffer(notes: notes, tempo: tempo, tone: tone) else { return }
         isPlaying = true
         if loop {
-            player.scheduleBuffer(buffer, at: nil, options: .loops, completionHandler: nil)
+            // 1つのバッファを .loops で無限ループさせると編集が反映されない。
+            // 毎周回ごとに最新のパターンから作り直して継ぎ足すことで、止めずに反映する。
+            loopQueue.async {
+                self.loopGeneration += 1
+                let generation = self.loopGeneration
+                self.isLooping = true
+                self.loopNotes = notes
+                self.loopTempo = tempo
+                self.loopTone = tone
+                // 2つ先まで積んで隙間なくつなぐ（ダブルバッファ）。
+                self.scheduleLoopBuffer(generation: generation)
+                self.scheduleLoopBuffer(generation: generation)
+            }
+            player.play()
         } else {
+            guard let buffer = renderBuffer(notes: notes, tempo: tempo, tone: tone) else {
+                isPlaying = false
+                return
+            }
             player.scheduleBuffer(buffer, at: nil, options: []) { [weak self] in
                 DispatchQueue.main.async { self?.isPlaying = false }
             }
+            player.play()
         }
-        player.play()
+    }
+
+    /// ループ中に鳴らす内容を差し替える。次の周回から新しいパターン・速さ・音色になる。
+    func updateLoop(notes: [Int], tempo: Double, tone: HornTone) {
+        loopQueue.async {
+            guard self.isLooping else { return }
+            self.loopNotes = notes
+            self.loopTempo = tempo
+            self.loopTone = tone
+        }
+    }
+
+    // loopQueue 上で呼ぶこと。最新のパターンを描画し、終わり次第また自分を積み直す。
+    private func scheduleLoopBuffer(generation: Int) {
+        guard isLooping, generation == loopGeneration,
+              let buffer = renderBuffer(notes: loopNotes, tempo: loopTempo, tone: loopTone) else { return }
+        player.scheduleBuffer(buffer, at: nil, options: []) { [weak self] in
+            guard let self else { return }
+            self.loopQueue.async { self.scheduleLoopBuffer(generation: generation) }
+        }
     }
 
     /// MIDIキーで押した1音を、いまの音色で即座に鳴らす。新しい音が前の音を切る（モノフォニック）。

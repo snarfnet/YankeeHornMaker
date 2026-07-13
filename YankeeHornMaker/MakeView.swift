@@ -60,6 +60,16 @@ struct MakeView: View {
         .onChange(of: midiInput) { on in
             if on { cursor = 0 }
         }
+        // 再生中にステップ盤・速さ・音色を触ったら、止めずにその場で反映する。
+        .onChange(of: steps) { newSteps in
+            engine.updateLoop(notes: newSteps, tempo: tempo, tone: engine.tone)
+        }
+        .onChange(of: tempo) { newTempo in
+            engine.updateLoop(notes: steps, tempo: newTempo, tone: engine.tone)
+        }
+        .onChange(of: engine.tone) { newTone in
+            engine.updateLoop(notes: steps, tempo: tempo, tone: newTone)
+        }
     }
 
     private var header: some View {
