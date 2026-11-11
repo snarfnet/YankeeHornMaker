@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 let legacy = Data("{\"id\":\"00000000-0000-0000-0000-000000000001\",\"name\":\"Old\",\"notes\":[60,-1,67],\"tempo\":180,\"tone\":\"リアルホーン\"}".utf8)
 let old = try JSONDecoder().decode(SavedMelody.self, from: legacy)
 assert(old.studio == nil && old.notes == [60,-1,67])
@@ -35,3 +36,20 @@ assert(hot.0.first == 0 && hot.0.last == 0)
 var invalid = settings; invalid.swing = .nan; invalid.transpose = 1000; invalid.harmony = 1000
 assert(invalid.sanitized.swing == 0 && invalid.sanitized.transpose == 24 && invalid.sanitized.harmony == 0)
 print("PASS: legacy saved melodies, complete studio round trip, 64 steps, swing timing, distinct voices, phrase generation, silent rests, headroom and edge fades")
+
+// Exercise the actual production renderer and file encoder, without audio playback.
+let engine = HornEngine()
+engine.grit = 0.4; engine.humanFeel = 0; engine.studio = settings
+for tone in [HornTone.brass, .glass, .retro, .velvet] {
+    let buffer = engine.renderBuffer(notes: [60,64,67,-1,72,67,64,-1], tempo: 160, tone: tone)!
+    let frames = Int(buffer.frameLength)
+    let samples = Array(UnsafeBufferPointer(start: buffer.floatChannelData![0], count: frames))
+    assert(samples.allSatisfy { $0.isFinite && abs($0) < 1 })
+    assert(samples.contains { abs($0) > 0.01 })
+    let url = engine.export(notes: [60,64,67,-1,72,67,64,-1], tempo: 160, tone: tone, name: "studio-" + tone.synthesisVoice, format: .wav)!
+    let file = try AVAudioFile(forReading: url)
+    assert(file.length == buffer.frameLength && file.fileFormat.channelCount == 2)
+    try FileManager.default.createDirectory(atPath: "studio-audio", withIntermediateDirectories: true)
+    try Data(contentsOf: url).write(to: URL(fileURLWithPath: "studio-audio/" + url.lastPathComponent))
+}
+print("PASS: four production synth voices render and export valid stereo WAV files")

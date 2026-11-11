@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Combine
 
 enum HornTone: String, CaseIterable, Codable, Identifiable {
     case bugle = "リアルホーン"
@@ -64,6 +65,8 @@ enum ExportFormat: String, CaseIterable, Identifiable {
 final class HornEngine: ObservableObject {
     private let studioLock = NSLock()
     private var renderStudio = HornStudioSettings()
+    private var renderGrit: Double = 0.62
+    private var renderFeel: Double = 0.48
     @Published var studio = HornStudioSettings() {
         didSet { studioLock.lock(); renderStudio = studio.sanitized; studioLock.unlock() }
     }
@@ -71,8 +74,12 @@ final class HornEngine: ObservableObject {
     @Published var tone: HornTone = .bugle
     @Published var tempo: Double = 160
     @Published var loop = false
-    @Published var grit: Double = 0.62
-    @Published var humanFeel: Double = 0.48
+    @Published var grit: Double = 0.62 {
+        didSet { studioLock.lock(); renderGrit = grit.isFinite ? min(1, max(0, grit)) : 0; studioLock.unlock() }
+    }
+    @Published var humanFeel: Double = 0.48 {
+        didSet { studioLock.lock(); renderFeel = humanFeel.isFinite ? min(1, max(0, humanFeel)) : 0; studioLock.unlock() }
+    }
     @Published var bikeSound: BikeSound = .off { didSet { applyBikeSound() } }
 
     private let engine = AVAudioEngine()
@@ -117,9 +124,11 @@ final class HornEngine: ObservableObject {
     private func configure() {
         guard !configured else { return }
         configured = true
+        #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         try? session.setActive(true)
+        #endif
         engine.attach(player)
         engine.attach(livePlayer)
         engine.attach(voiceMixer)
@@ -271,10 +280,10 @@ final class HornEngine: ObservableObject {
         }
     }
 
-    private func renderBuffer(notes: [Int], tempo: Double, tone: HornTone) -> AVAudioPCMBuffer? {
+    func renderBuffer(notes: [Int], tempo: Double, tone: HornTone) -> AVAudioPCMBuffer? {
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
         guard !notes.isEmpty, notes.count <= 512 else { return nil }
-        studioLock.lock(); let settings = renderStudio; studioLock.unlock()
+        studioLock.lock(); let settings = renderStudio; let grit = renderGrit; let humanFeel = renderFeel; studioLock.unlock()
         let boundaries = HornStudioDSP.boundaries(count: notes.count, tempo: tempo, swing: settings.swing)
         let totalFrames = boundaries.last ?? 0
         guard totalFrames > 0,
