@@ -10,7 +10,7 @@ struct MakeView: View {
     @ObservedObject var store: MelodyStore
     @ObservedObject var midi: MIDIManager
 
-    private let stepCount = 16
+    private var stepCount: Int { steps.count }
     private let pitches = Array((60...72).reversed())
     @State private var steps: [Int] = [60, 64, 67, 72, 67, 64, 60, -1, 60, 64, 67, 72, 67, 64, 60, -1]
     @State private var tempo: Double = 180
@@ -27,15 +27,11 @@ struct MakeView: View {
             VStack(spacing: 12) {
                 header
                 grid
+                controls
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
             .padding(.bottom, 12)
-        }
-        .safeAreaInset(edge: .bottom) {
-            controls
-                .padding(.horizontal, 16)
-                .padding(.bottom, 6)
         }
         .background(AppBackdrop())
         .sheet(isPresented: $showSaved) { savedSheet }
@@ -104,16 +100,37 @@ struct MakeView: View {
                     .font(Theme.sectionFont)
                     .foregroundStyle(Theme.gold)
                 Spacer()
-                Text("16連")
+                Text("\(stepCount)連")
                     .font(.system(size: 13, weight: .black, design: .rounded))
                     .foregroundStyle(Theme.red)
             }
 
+            HStack {
+                Menu("長さ：\(stepCount)ステップ") {
+                    ForEach([16, 32, 64], id: \.self) { count in
+                        Button("\(count)ステップ") {
+                            rememberSteps(); steps = resized(steps, count: count); cursor = 0
+                        }
+                    }
+                }
+                Menu("フレーズ作成") {
+                    Button("明るいフレーズを生成") { generate(mode: 0) }
+                    Button("ダークなフレーズを生成") { generate(mode: 1) }
+                    Button("順序を反転") { rememberSteps(); steps.reverse() }
+                    Button("1ステップずらす") { rememberSteps(); steps = [steps.last!] + steps.dropLast(); cursor = 0 }
+                    Button("前半を後半にコピー") {
+                        rememberSteps(); let half = Array(steps.prefix(stepCount / 2)); steps = half + half
+                    }
+                }
+            }.font(Theme.bodyFont).tint(Theme.gold)
+            Text("短くすると末尾を省略します。「戻す」で復元できます。")
+                .font(.caption).foregroundStyle(Theme.muted)
             HStack(spacing: 8) {
                 Button {
                     guard let previousSteps else { return }
                     let current = steps
                     steps = previousSteps
+                    cursor = 0
                     self.previousSteps = current
                 } label: {
                     Label("戻す", systemImage: "arrow.uturn.backward")
@@ -205,8 +222,9 @@ struct MakeView: View {
             Picker("音色", selection: $engine.tone) {
                 ForEach(HornTone.allCases) { Text($0.rawValue).tag($0) }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
 
+            HornStudioPanel(engine: engine)
             HStack(spacing: 10) {
                 Label("荒さ", systemImage: "bolt.fill")
                     .font(Theme.bodyFont)
@@ -261,7 +279,7 @@ struct MakeView: View {
 
                 Button {
                     let n = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "MY HORN" : name
-                    store.add(SavedMelody(name: n, notes: steps, tempo: tempo, tone: engine.tone.rawValue))
+                    store.add(SavedMelody(name: n, notes: steps, tempo: tempo, tone: engine.tone.rawValue, studio: engine.studio.sanitized, grit: engine.grit, humanFeel: engine.humanFeel))
                     name = ""
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                         savedMessage = "「\(n)」を保存しました"
@@ -314,6 +332,8 @@ struct MakeView: View {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "YankeeHorn" : name
         if let url = engine.export(notes: steps, tempo: tempo, tone: engine.tone, name: n, format: format) {
             exportItem = ExportItem(url: url)
+        } else {
+            savedMessage = "書き出しに失敗しました。再度お試しください。"
         }
     }
 
@@ -338,8 +358,13 @@ struct MakeView: View {
                 ForEach(store.melodies) { melody in
                     Button {
                         rememberSteps()
-                        steps = normalized(melody.notes)
-                        tempo = melody.tempo
+                        let length = melody.notes.count > 32 ? 64 : (melody.notes.count > 16 ? 32 : 16)
+                        steps = resized(melody.notes, count: length)
+                        cursor = 0
+                        tempo = melody.tempo.isFinite ? min(260, max(80, melody.tempo)) : 180
+                        engine.studio = (melody.studio ?? HornStudioSettings()).sanitized
+                        engine.grit = min(1, max(0, melody.grit ?? 0.62))
+                        engine.humanFeel = min(1, max(0, melody.humanFeel ?? 0.48))
                         engine.tone = HornTone(rawValue: melody.tone) ?? .bugle
                         showSaved = false
                     } label: {
@@ -361,9 +386,20 @@ struct MakeView: View {
         }
     }
 
-    private func normalized(_ notes: [Int]) -> [Int] {
-        var result = Array(notes.prefix(stepCount))
-        while result.count < stepCount { result.append(-1) }
+    private func generate(mode: Int) {
+        rememberSteps()
+        steps = HornStudioDSP.generate(count: stepCount, seed: UInt64.random(in: 1...UInt64.max), mode: mode)
+        cursor = 0
+    }
+
+    private func resized(_ notes: [Int], count: Int) -> [Int] {
+        var result = Array(notes.prefix(count)).map { note -> Int in
+            guard note >= 0 else { return -1 }
+            var n = min(127, note)
+            while n < 60 { n += 12 }; while n > 72 { n -= 12 }
+            return n
+        }
+        while result.count < count { result.append(-1) }
         return result
     }
 

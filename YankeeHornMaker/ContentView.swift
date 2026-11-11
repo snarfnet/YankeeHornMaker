@@ -119,8 +119,9 @@ struct PlayView: View {
             Picker("音色", selection: $engine.tone) {
                 ForEach(HornTone.allCases) { Text($0.rawValue).tag($0) }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
 
+            HornStudioPanel(engine: engine)
             characterControls
 
             VStack(spacing: 8) {

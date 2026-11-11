@@ -6,8 +6,21 @@ enum HornTone: String, CaseIterable, Codable, Identifiable {
     case shrill = "甲高いホーン"
     case horn = "重低音ホーン"
     case electronic = "電子ホーン"
+    case brass = "ブラス隊"
+    case glass = "クリスタル"
+    case retro = "レトロパルス"
+    case velvet = "ベルベット"
 
     var id: String { rawValue }
+    var synthesisVoice: String {
+        switch self {
+        case .brass: return "brass"
+        case .glass: return "glass"
+        case .retro: return "retro"
+        case .velvet: return "velvet"
+        default: return "electronic"
+        }
+    }
 
     var sampleInfo: (resource: String, f0: Double)? {
         switch self {
@@ -15,7 +28,7 @@ enum HornTone: String, CaseIterable, Codable, Identifiable {
         // 同じラッパ音源を基準ピッチ半分で鳴らし、1オクターブ上の甲高い音色にする
         case .shrill: return ("BugleNote", 232.1)
         case .horn: return ("HornNote", 308.4)
-        case .electronic: return nil
+        case .electronic, .brass, .glass, .retro, .velvet: return nil
         }
     }
 }
@@ -39,15 +52,21 @@ enum BikeSound: String, CaseIterable, Identifiable {
 
 /// メロディを書き出すファイル形式。MP3は非対応（iOS標準でエンコード不可）。
 enum ExportFormat: String, CaseIterable, Identifiable {
+    case wav = "WAV"
     case aiff = "AIFF"
     case m4a = "M4A"
 
     var id: String { rawValue }
-    var ext: String { self == .aiff ? "aiff" : "m4a" }
+    var ext: String { rawValue.lowercased() }
 }
 
 /// Renders short horn melodies into one audio buffer and plays them.
 final class HornEngine: ObservableObject {
+    private let studioLock = NSLock()
+    private var renderStudio = HornStudioSettings()
+    @Published var studio = HornStudioSettings() {
+        didSet { studioLock.lock(); renderStudio = studio.sanitized; studioLock.unlock() }
+    }
     @Published var isPlaying = false
     @Published var tone: HornTone = .bugle
     @Published var tempo: Double = 160
@@ -226,14 +245,14 @@ final class HornEngine: ObservableObject {
 
         let settings: [String: Any]
         switch format {
-        case .aiff:
+        case .aiff, .wav:
             settings = [
                 AVFormatIDKey: kAudioFormatLinearPCM,
                 AVSampleRateKey: sampleRate,
                 AVNumberOfChannelsKey: 2,
                 AVLinearPCMBitDepthKey: 16,
                 AVLinearPCMIsFloatKey: false,
-                AVLinearPCMIsBigEndianKey: true
+                AVLinearPCMIsBigEndianKey: format == .aiff
             ]
         case .m4a:
             settings = [
@@ -254,9 +273,10 @@ final class HornEngine: ObservableObject {
 
     private func renderBuffer(notes: [Int], tempo: Double, tone: HornTone) -> AVAudioPCMBuffer? {
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
-        let secondsPerStep = 60.0 / max(tempo, 30) / 2.0
-        let framesPerStep = Int(secondsPerStep * sampleRate)
-        let totalFrames = framesPerStep * max(notes.count, 1)
+        guard !notes.isEmpty, notes.count <= 512 else { return nil }
+        studioLock.lock(); let settings = renderStudio; studioLock.unlock()
+        let boundaries = HornStudioDSP.boundaries(count: notes.count, tempo: tempo, swing: settings.swing)
+        let totalFrames = boundaries.last ?? 0
         guard totalFrames > 0,
               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(totalFrames)) else { return nil }
         buffer.frameLength = AVAudioFrameCount(totalFrames)
@@ -267,49 +287,33 @@ final class HornEngine: ObservableObject {
             right[i] = 0
         }
 
-        let gate = 0.85
-        let noteFrames = Int(Double(framesPerStep) * gate)
         let sample = samples[tone]
-        for (idx, note) in notes.enumerated() where note >= 0 {
+        for (idx, originalNote) in notes.enumerated() where originalNote >= 0 {
+            let framesPerStep = boundaries[idx + 1] - boundaries[idx]
+            let noteFrames = Int(Double(framesPerStep) * settings.gate)
+            let voices = settings.harmony == 0 ? [0] : [0, settings.harmony]
+            for interval in voices {
+            let note = min(127, max(0, originalNote + settings.transpose + interval))
             // A repeatable imperfection: each step lands and tunes a little differently,
             // like the same person leaning on a real horn switch.
             let character = sin(Double(idx * 37 + note * 11))
             let cents = character * 16.0 * humanFeel
             let freq = 440.0 * pow(2.0, (Double(note) - 69.0) / 12.0) * pow(2.0, cents / 1200.0)
             let drag = Int(max(0, character) * Double(framesPerStep) * 0.055 * humanFeel)
-            let start = min(idx * framesPerStep + drag, totalFrames - 1)
+            let start = min(boundaries[idx] + drag, totalFrames - 1)
             if let sample = sample, let info = tone.sampleInfo, !sample.isEmpty {
                 renderSample(freq: freq, sample: sample, sampleF0: info.f0,
                              left: left, right: right,
                              start: start, length: noteFrames, total: totalFrames)
             } else {
-                renderNote(freq: freq, left: left, right: right,
+                renderNote(freq: freq, voice: tone.synthesisVoice, left: left, right: right,
                            start: start, length: noteFrames, total: totalFrames)
             }
         }
-        applyGrit(left: left, right: right, frameCount: totalFrames)
-        return buffer
-    }
-
-    private func applyGrit(left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>, frameCount: Int) {
-        guard grit > 0 else { return }
-        let drive = Float(1.0 + grit * 4.2)
-        let output = Float(1.0 / (1.0 + grit * 0.72))
-        var previousL: Float = 0
-        var previousR: Float = 0
-
-        for frame in 0..<frameCount {
-            // Uneven analogue-style saturation and a slight horn-cabinet smear.
-            let biasedL = left[frame] * drive + 0.018 * Float(grit)
-            let biasedR = right[frame] * drive - 0.012 * Float(grit)
-            let clippedL = tanh(biasedL) * output
-            let clippedR = tanh(biasedR) * output
-            let smear = Float(0.10 + grit * 0.12)
-            previousL += (clippedL - previousL) * (1 - smear)
-            previousR += (clippedR - previousR) * (1 - smear)
-            left[frame] = previousL
-            right[frame] = previousR
         }
+        HornStudioDSP.finish(left: left, right: right, count: totalFrames, grit: grit, echo: settings.echo,
+                             delayFrames: HornStudioDSP.boundaries(count: 2, tempo: tempo, swing: 0).last ?? 22050)
+        return buffer
     }
 
     private func renderSample(freq: Double, sample: [Float], sampleF0: Double,
@@ -346,9 +350,9 @@ final class HornEngine: ObservableObject {
         }
     }
 
-    private func renderNote(freq: Double, left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>,
+    private func renderNote(freq: Double, voice: String, left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>,
                             start: Int, length: Int, total: Int) {
-        let harmonics = [1.0, 0.12, 0.55, 0.08, 0.35, 0.06, 0.24, 0.04, 0.17, 0.03]
+        let harmonics = HornStudioDSP.harmonics(voice)
         let detune = pow(2.0, 3.0 / 1200.0)
         let freqL = freq
         let freqR = freq * detune

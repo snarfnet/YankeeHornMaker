@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Preset horn melodies. `-1` means rest.
 struct HornPreset: Identifiable {
@@ -230,6 +231,9 @@ struct SavedMelody: Codable, Identifiable {
     var notes: [Int]
     var tempo: Double
     var tone: String
+    var studio: HornStudioSettings? = nil
+    var grit: Double? = nil
+    var humanFeel: Double? = nil
 }
 
 /// Tiny persistence store for user melodies.
