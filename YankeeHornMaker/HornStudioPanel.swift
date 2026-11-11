@@ -12,7 +12,7 @@ struct HornStudioPanel: View {
                 Picker("二重奏", selection: $engine.studio.harmony) {
                     Text("単音").tag(0); Text("長3度").tag(4); Text("5度").tag(7); Text("オクターブ").tag(12)
                 }.pickerStyle(.menu)
-                Text("変更は再生中の次のバッファから反映します。書き出しにはエコーを含み、背景のバイク音と再生時の残響は含みません。")
+                Text("変更は予約済みのループ再生後に反映します。書き出しにはエコーを含み、背景のバイク音と再生時の残響は含みません。")
                     .font(.caption).foregroundStyle(Theme.muted)
                 Button("スタジオ設定を初期値に戻す") { engine.studio = HornStudioSettings() }
             }.padding(.top, 10)

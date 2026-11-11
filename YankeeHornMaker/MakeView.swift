@@ -33,6 +33,9 @@ struct MakeView: View {
             .padding(.top, 10)
             .padding(.bottom, 12)
         }
+        .safeAreaInset(edge: .bottom) {
+            transport.padding(.horizontal, 16).padding(.vertical, 6).background(Theme.ink)
+        }
         .background(AppBackdrop())
         .sheet(isPresented: $showSaved) { savedSheet }
         .sheet(item: $exportItem) { ShareSheet(items: [$0.url]) }
@@ -251,22 +254,6 @@ struct MakeView: View {
                     .tint(Theme.gold)
             }
 
-            HStack(spacing: 12) {
-                Button {
-                    engine.play(notes: steps, tempo: tempo, tone: engine.tone, loop: true)
-                } label: {
-                    Label("鳴らす", systemImage: "play.fill")
-                }
-                .buttonStyle(BrushButtonStyle(kind: .gold))
-
-                Button {
-                    engine.stop()
-                } label: {
-                    Label("止める", systemImage: "stop.fill")
-                }
-                .buttonStyle(BrushButtonStyle(kind: .red))
-            }
-
             HStack(spacing: 10) {
                 TextField("メロディ名", text: $name)
                     .font(Theme.bodyFont)
@@ -326,6 +313,25 @@ struct MakeView: View {
         }
         .padding(14)
         .metalPanel(cornerRadius: 18, isHot: true)
+    }
+
+    private var transport: some View {
+            HStack(spacing: 12) {
+                Button {
+                    engine.play(notes: steps, tempo: tempo, tone: engine.tone, loop: true)
+                } label: {
+                    Label("鳴らす", systemImage: "play.fill")
+                }
+                .buttonStyle(BrushButtonStyle(kind: .gold))
+
+                Button {
+                    engine.stop()
+                } label: {
+                    Label("止める", systemImage: "stop.fill")
+                }
+                .buttonStyle(BrushButtonStyle(kind: .red))
+            }
+
     }
 
     private func export(_ format: ExportFormat) {
